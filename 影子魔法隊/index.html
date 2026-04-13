@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K2 影子魔法辨識鏡 - 終極自動版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    
+    <style>
+        :root {
+            --magic-gold: #FFD700;
+            --magic-blue: #00bcd4;
+            --bg-dark: #1a1a2e;
+        }
+
+        body { 
+            font-family: 'MicroSoft JhengHei', sans-serif; 
+            text-align: center; 
+            background: var(--bg-dark);
+            background-image: radial-gradient(circle at center, #2e2e5e 0%, #1a1a2e 100%);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        .scene {
+            width: 90%;
+            max-width: 400px;
+            height: 600px;
+            perspective: 1500px;
+        }
+
+        .game-card {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transition: transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+            cursor: pointer;
+        }
+
+        .game-card.is-flipped {
+            transform: rotateY(180deg);
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 30px;
+            border: 6px solid var(--magic-gold);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 25px;
+            box-sizing: border-box;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        /* 正面樣式 */
+        .card-front {
+            background: #fff9e3;
+            color: #333;
+        }
+
+        /* 背面樣式 */
+        .card-back {
+            background: #e0f7fa;
+            color: #006064;
+            transform: rotateY(180deg);
+            border-color: var(--magic-blue);
+        }
+
+        #preview-box {
+            width: 100%;
+            height: 280px;
+            border: 3px dashed #bbb;
+            border-radius: 20px;
+            margin: 20px 0;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fdfdfd;
+            overflow: hidden;
+        }
+
+        #preview-img { max-width: 100%; max-height: 100%; display: none; }
+
+        /* 掃描動畫 */
+        .scanner {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background: #00ff88;
+            box-shadow: 0 0 15px #00ff88;
+            top: 0;
+            display: none;
+            animation: scanMove 1.5s infinite ease-in-out;
+        }
+
+        @keyframes scanMove {
+            0% { top: 0%; }
+            100% { top: 100%; }
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #ff6b6b, #ee5253);
+            color: white;
+            border: none;
+            padding: 15px 35px;
+            border-radius: 50px;
+            font-size: 20px;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(238, 82, 83, 0.4);
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .btn-reset {
+            background: linear-gradient(135deg, #00bcd4, #0097a7);
+            box-shadow: 0 5px 15px rgba(0, 188, 212, 0.4);
+            margin-top: auto;
+        }
+
+        /* 動物活起來的動畫 */
+        .result-img {
+            width: 85%;
+            border-radius: 20px;
+            margin-top: 20px;
+        }
+
+        .anim-rabbit { animation: hop 0.6s infinite alternate; }
+        .anim-bird { animation: fly 2s infinite ease-in-out; }
+        .anim-dog { animation: wag 0.8s infinite alternate; transform-origin: bottom; }
+
+        @keyframes hop { from { transform: translateY(0); } to { transform: translateY(-30px); } }
+        @keyframes fly { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-20px) rotate(2deg); } }
+        @keyframes wag { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+
+        #status-msg { font-size: 16px; margin-top: 10px; color: #ff6b6b; font-weight: bold; min-height: 24px; }
+    </style>
+</head>
+<body>
+
+    <div class="scene">
+        <div class="game-card" id="card">
+            
+            <div class="card-face card-front">
+                <h2>✨ 影子魔法鏡 ✨</h2>
+                <div id="preview-box">
+                    <div class="scanner" id="scanner"></div>
+                    <span id="hint">請放入影子照片</span>
+                    <img id="preview-img" src="" crossorigin="anonymous">
+                </div>
+                <div id="status-msg">魔法大腦載入中...</div>
+                <input type="file" id="fileInput" hidden onchange="processImage(event)">
+                <button class="btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">開始魔法</button>
+            </div>
+
+            <div class="card-face card-back">
+                <h2 id="animalName">辨識成功！</h2>
+                <img id="resultImg" class="result-img" src="">
+                <button class="btn btn-reset" onclick="resetGame()">再玩一次</button>
+            </div>
+
+        </div>
+    </div>
+
+    <audio id="sound-dog" src="https://actions.google.com/sounds/v1/animals/dog_barking.ogg"></audio>
+    <audio id="sound-bird" src="https://actions.google.com/sounds/v1/animals/bird_caw.ogg"></audio>
+    <audio id="sound-rabbit" src="https://actions.google.com/sounds/v1/cartoon/cartoon_hop.ogg"></audio>
+
+    <script>
+        const MODEL_URL = "https://teachablemachine.withgoogle.com/models/tudojgJbk/";
+        let model, currentAudio = null;
+
+        async function init() {
+            model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
+            document.getElementById('status-msg').innerText = "🔮 魔法已就緒，請上傳！";
+        }
+        init();
+
+        function processImage(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = document.getElementById('preview-img');
+                img.src = event.target.result;
+                img.style.display = 'block';
+                document.getElementById('hint').style.display = 'none';
+                document.getElementById('scanner').style.display = 'block';
+                document.getElementById('status-msg').innerText = "正在讀取影子的靈魂...";
+                
+                setTimeout(() => predict(), 1500);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function predict() {
+            const img = document.getElementById('preview-img');
+            const prediction = await model.predict(img);
+            
+            let result = prediction.sort((a, b) => b.probability - a.probability)[0].className;
+            showResult(result);
+        }
+
+        function showResult(animal) {
+            const config = {
+                'dog': { name: '是一隻小狗！', img: 'dog_cartoon.png', sound: 'sound-dog', anim: 'anim-dog' },
+                'bird': { name: '是一隻小鳥！', img: 'bird_cartoon.png', sound: 'sound-bird', anim: 'anim-bird' },
+                'rabbit': { name: '是一隻小兔！', img: 'rabbit_cartoon.png', sound: 'sound-rabbit', anim: 'anim-rabbit' }
+            };
+
+            const data = config[animal] || config['dog'];
+            
+            document.getElementById('animalName').innerText = data.name;
+            const resImg = document.getElementById('resultImg');
+            resImg.src = data.img;
+            resImg.className = 'result-img ' + data.anim;
+
+            // 翻轉卡片
+            document.getElementById('card').classList.add('is-flipped');
+            
+            // 播放音頻並設定 5 秒自動停止
+            playMagicSound(data.sound);
+        }
+
+        function playMagicSound(id) {
+            if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; }
+            currentAudio = document.getElementById(id);
+            currentAudio.play();
+
+            // ✨ 5秒自動停止邏輯 ✨
+            setTimeout(() => {
+                if (currentAudio && !currentAudio.paused) {
+                    fadeOutAndStop(currentAudio);
+                }
+            }, 5000);
+        }
+
+        function fadeOutAndStop(audio) {
+            // 簡單的淡出效果，讓停止不那麼突兀
+            let volume = 1;
+            const interval = setInterval(() => {
+                volume -= 0.1;
+                if (volume <= 0) {
+                    clearInterval(interval);
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.volume = 1; // 重置音量供下次使用
+                } else {
+                    audio.volume = volume;
+                }
+            }, 50);
+        }
+
+        function resetGame() {
+            document.getElementById('card').classList.remove('is-flipped');
+            if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; }
+            
+            setTimeout(() => {
+                document.getElementById('preview-img').style.display = 'none';
+                document.getElementById('hint').style.display = 'block';
+                document.getElementById('scanner').style.display = 'none';
+                document.getElementById('status-msg').innerText = "🔮 魔法已就緒，請上傳！";
+                document.getElementById('fileInput').value = "";
+            }, 600);
+        }
+    </script>
+</body>
+</html>
